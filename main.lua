@@ -217,98 +217,101 @@ local function drawHeight()
 end
 
 function love.draw()
-  local W, H = love.getWidth(), love.getHeight()
-  local gw = gameW()
-  local top = cam - 60
+    local W, H = love.getWidth(), love.getHeight()
+    local gw = gameW()
+    local top = cam - 60
 
-  local srng = love.math.newRandomGenerator(fx.seed + math.floor(fx.t * 24))
-  local sx = (srng:random() * 2 - 1) * fx.shake
-  local sy = (srng:random() * 2 - 1) * fx.shake
+    local srng = love.math.newRandomGenerator(fx.seed + math.floor(fx.t * 24))
+    local sx = (srng:random() * 2 - 1) * fx.shake
+    local sy = (srng:random() * 2 - 1) * fx.shake
 
-  love.graphics.clear(love.math.colorFromBytes(0x68, 0xb0, 0xab))
-  love.graphics.setScissor(0, 0, gw, H)
-  love.graphics.setLineJoin("bevel")
-  love.graphics.translate(sx, sy - cam)
+    love.graphics.clear(love.math.colorFromBytes(0x68, 0xb0, 0xab))
+    love.graphics.setScissor(0, 0, gw, H)
+    love.graphics.setLineJoin("bevel")
+    love.graphics.translate(sx, sy - cam)
 
-  love.graphics.setColor(love.math.colorFromBytes(0x4a, 0x7c, 0x59))
-  love.graphics.rectangle("fill", 0, floorY + ball.r, gw, H)
-  local ground = floorY + ball.r
-  local still = love.math.newRandomGenerator(7)
-  love.graphics.setColor(0, 0, 0, 0.18)
-  local prev = ground + 8 + still:random() * 6
-  for x = 0, gw, 20 do
-    local nxt = ground + 8 + still:random() * 6
-    love.graphics.polygon("fill", x, ground, x + 20, ground, x + 20, nxt, x, prev)
-    prev = nxt
-  end
-  love.graphics.setColor(0, 0, 0, 0.12)
-  love.graphics.setLineWidth(2)
-  for x = 8, gw, 14 do
-    local hx, hy = x + still:random() * 6, ground + 16 + still:random() * 10
-    love.graphics.line(hx, hy, hx - 5 - still:random() * 4, hy + 6 + still:random() * 5)
-  end
-  love.graphics.setLineWidth(1)
-
-  local s = math.max(0.15, 1 - (floorY - ball.y) / 600)
-  local boil = love.math.newRandomGenerator(math.floor(love.timer.getTime() * 8))
-  local function blob(rx, ry, ox)
-    local pts = {}
-    for i = 0, 13 do
-      local a = i / 14 * math.pi * 2
-      local j = 0.92 + boil:random() * 0.16
-      pts[#pts + 1] = ball.x + ox + math.cos(a) * rx * j
-      pts[#pts + 1] = ground + ry * 1.1 + math.sin(a) * ry * j
+    love.graphics.setColor(love.math.colorFromBytes(0x4a, 0x7c, 0x59))
+    love.graphics.rectangle("fill", 0, floorY + ball.r, gw, H)
+    local ground = floorY + ball.r
+    local still = love.math.newRandomGenerator(7)
+    love.graphics.setColor(0, 0, 0, 0.18)
+    local prev = ground + 8 + still:random() * 6
+    for x = 0, gw, 20 do
+        local nxt = ground + 8 + still:random() * 6
+        love.graphics.polygon("fill", x, ground, x + 20, ground, x + 20, nxt, x, prev)
+        prev = nxt
     end
-    love.graphics.polygon("fill", pts)
-  end
-  love.graphics.setColor(0, 0, 0, 0.14 * s)
-  blob(ball.r * 1.5 * s, 6 * s, 0)
-  love.graphics.setColor(0, 0, 0, 0.3 * s)
-  blob(ball.r * 0.9 * s, 4 * s, ball.r * 0.15 * s)
+    love.graphics.setColor(0, 0, 0, 0.12)
+    love.graphics.setLineWidth(2)
+    for x = 8, gw, 14 do
+        local hx, hy = x + still:random() * 6, ground + 16 + still:random() * 10
+        love.graphics.line(hx, hy, hx - 5 - still:random() * 4, hy + 6 + still:random() * 5)
+    end
+    love.graphics.setLineWidth(1)
 
-  if fx.t >= FREEZE and fx.t < FREEZE + 0.5 then
-    love.graphics.setColor(0.03, 0.08, 0.2)
-    cracks()
-  end
+    local s = math.max(0.15, 1 - (floorY - ball.y) / 600)
+    local boil = love.math.newRandomGenerator(math.floor(love.timer.getTime() * 8))
+    local function blob(rx, ry, ox)
+        local pts = {}
+        for i = 0, 13 do
+            local a = i / 14 * math.pi * 2
+            local j = 0.92 + boil:random() * 0.16
+            pts[#pts + 1] = ball.x + ox + math.cos(a) * rx * j
+            pts[#pts + 1] = ground + ry * 1.1 + math.sin(a) * ry * j
+        end
+        love.graphics.polygon("fill", pts)
+    end
+    love.graphics.setColor(0, 0, 0, 0.14 * s)
+    blob(ball.r * 1.5 * s, 6 * s, 0)
+    love.graphics.setColor(0, 0, 0, 0.3 * s)
+    blob(ball.r * 0.9 * s, 4 * s, ball.r * 0.15 * s)
 
-  love.graphics.setColor(0.78, 0.8, 0.82)
-  ballShape()
-  love.graphics.setColor(1, 1, 1)
-  ballShape(-ball.r * 0.12 * squish.sx, -ball.r * 0.12 * squish.sy, 0.85)
-  for _, d in ipairs(drops) do
-    love.graphics.setColor(1, 1, 1, d.life)
-    love.graphics.circle("fill", d.x, d.y, 4)
-  end
-  love.graphics.setColor(1, 1, 1, 1)
-  drawSpeedLines()
+    if fx.t >= FREEZE and fx.t < FREEZE + 0.5 then
+        love.graphics.setColor(0.03, 0.08, 0.2)
+        cracks()
+    end
 
-  local rng = love.math.newRandomGenerator(fx.seed + math.floor(fx.t / STEP))
-  if fx.t < 0.04 then
-    love.graphics.setColor(1, 1, 1)
-    love.graphics.rectangle("fill", -50, top, gw + 100, H + 120)
-    love.graphics.setColor(0, 0, 0)
-    wedges(rng, 22)
+    love.graphics.setColor(0.78, 0.8, 0.82)
     ballShape()
-  elseif fx.t < FREEZE then
-    love.graphics.setColor(0, 0, 0)
-    love.graphics.rectangle("fill", -50, top, gw + 100, H + 120)
     love.graphics.setColor(1, 1, 1)
-    wedges(rng, 28)
-    ballShape()
-    jaggedRing(rng, ball.r * 2.2, 4)
-  elseif fx.t < FREEZE + STEP * 3 then
-    local k = math.floor((fx.t - FREEZE) / STEP)
+    ballShape(-ball.r * 0.12 * squish.sx, -ball.r * 0.12 * squish.sy, 0.85)
+    for _, d in ipairs(drops) do
+        love.graphics.setColor(1, 1, 1, d.life)
+        love.graphics.circle("fill", d.x, d.y, 4)
+    end
+    love.graphics.setColor(1, 1, 1, 1)
+    drawSpeedLines()
+
+    local rng = love.math.newRandomGenerator(fx.seed + math.floor(fx.t / STEP))
+    if fx.t < 0.04 then
+        love.graphics.setColor(1, 1, 1)
+        love.graphics.rectangle("fill", -50, top, gw + 100, H + 120)
+        love.graphics.setColor(0, 0, 0)
+        wedges(rng, 22)
+        ballShape()
+    elseif fx.t < FREEZE then
+        love.graphics.setColor(0, 0, 0)
+        love.graphics.rectangle("fill", -50, top, gw + 100, H + 120)
+        love.graphics.setColor(1, 1, 1)
+        wedges(rng, 28)
+        ballShape()
+        jaggedRing(rng, ball.r * 2.2, 4)
+    elseif fx.t < FREEZE + STEP * 3 then
+        local k = math.floor((fx.t - FREEZE) / STEP)
+        love.graphics.setColor(1, 1, 1)
+        jaggedRing(rng, 70 + k * 70, 6 - k * 2)
+        if k == 0 then wedges(rng, 8) end
+    end
+    love.graphics.origin()
     love.graphics.setColor(1, 1, 1)
-    jaggedRing(rng, 70 + k * 70, 6 - k * 2)
-    if k == 0 then wedges(rng, 8) end
-  end
-  love.graphics.origin()
-  love.graphics.setColor(1, 1, 1)
-  drawHeight()
-  love.graphics.setScissor()
-  love.graphics.setColor(0.12, 0.12, 0.18)
-  love.graphics.rectangle("fill", gw, 0, W - gw, H)
-  love.graphics.setColor(1, 1, 1, 0.3)
-  love.graphics.line(gw, 0, gw, H)
-  love.graphics.setColor(1, 1, 1)
+    drawHeight()
+    love.graphics.setScissor()
+    love.graphics.setColor(0.12, 0.12, 0.18)
+    love.graphics.rectangle("fill", gw, 0, W - gw, H)
+    love.graphics.setColor(1, 1, 1, 0.3)
+    love.graphics.line(gw, 0, gw, H)
+    love.graphics.setColor(1, 1, 1)
 end
+
+local width = love.graphics.getWidth() / 2;
+local H = love.graphics.getHeight();
