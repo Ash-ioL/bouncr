@@ -1,7 +1,7 @@
 love.getWidth = love.graphics.getWidth
 love.getHeight = love.graphics.getHeight
 
-local ball = { x = love.getWidth() / 2, y = love.getHeight(), r = 30 }
+local ball = { x = love.getWidth() / 5, y = love.getHeight(), r = 30 }
 local jumpHeight = 200
 local acceleration = -9.8
 local prevTime = -1;
