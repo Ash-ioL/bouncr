@@ -156,6 +156,32 @@ end
 
 local INK, PAPER = { 0.1, 0.18, 0.14 }, { 0.96, 0.95, 0.87 }
 
+function drawSpeedLines()
+  local vel = ball.vy;
+  local len = math.abs(vel) * 0.1;
+  local gap = 10;
+  local bottom = ball.y + ball.r;
+  local top = bottom - 2 * ball.r * squish.sy;
+  local y1, dir;
+  if vel < 0 then
+    y1, dir = bottom + gap, 1;
+  else
+    y1, dir = top - gap, -1;
+  end
+
+  local function streak(x, l, a)
+    local y2 = y1 + dir * l;
+    if dir == 1 then y2 = math.min(y2, floorY + ball.r) end
+    love.graphics.setColor(1, 1, 1, a)
+    love.graphics.line(x, y1, x, y2)
+  end
+
+  streak(ball.x - 20, len * 0.7, 0.6);
+  streak(ball.x, len, 0.9);
+  streak(ball.x + 20, len * 0.7, 0.6);
+  love.graphics.setColor(1, 1, 1, 1)
+end
+
 local function inkText(text, font, x, y, t)
   love.graphics.setFont(font)
   love.graphics.setColor(INK)
@@ -186,6 +212,7 @@ local function drawHeight()
   love.graphics.setColor(PAPER)
   love.graphics.line(0, 73, w * 0.5, 76, w + 4, 71)
   love.graphics.setLineWidth(1)
+  inkText("SPEED " .. math.floor(math.abs(ball.vy)), smallFont, 4, 86, 2)
   love.graphics.pop()
 end
 
@@ -252,6 +279,8 @@ function love.draw()
     love.graphics.setColor(1, 1, 1, d.life)
     love.graphics.circle("fill", d.x, d.y, 4)
   end
+  love.graphics.setColor(1, 1, 1, 1)
+  drawSpeedLines()
 
   local rng = love.math.newRandomGenerator(fx.seed + math.floor(fx.t / STEP))
   if fx.t < 0.04 then
@@ -273,12 +302,10 @@ function love.draw()
     jaggedRing(rng, 70 + k * 70, 6 - k * 2)
     if k == 0 then wedges(rng, 8) end
   end
-
   love.graphics.origin()
   love.graphics.setColor(1, 1, 1)
   drawHeight()
   love.graphics.setScissor()
-
   love.graphics.setColor(0.12, 0.12, 0.18)
   love.graphics.rectangle("fill", gw, 0, W - gw, H)
   love.graphics.setColor(1, 1, 1, 0.3)
