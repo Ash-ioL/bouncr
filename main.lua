@@ -17,6 +17,17 @@ local FREEZE, STEP = 0.12, 1 / 12
 
 local function gameW() return love.getWidth() / 2 end
 
+local HILL_W, HILL_H = 1.1, 140
+
+local function hillY(x)
+  local ground = floorY + ball.r
+  local u = (x - ball.x) / (gameW() * 0.5 * HILL_W)
+  if math.abs(u) >= 1 then return ground + HILL_H end
+  local curve = (1 - math.sqrt(1 - u * u)) * HILL_H
+  local turn = math.sin(u * 9 + 0.6) * 10 * u * u
+  return ground + curve + turn
+end
+
 local function squishLand(x, y)
   squish.sx, squish.sy = 1.4, 0.6
   for i = 1, 12 do
@@ -38,7 +49,7 @@ end
 
 function love.load()
   ball.x = gameW() / 2
-  floorY = love.getHeight() - ball.r - 50
+  floorY = love.getHeight() - ball.r - 100
   ball.y = floorY
 end
 
@@ -65,7 +76,7 @@ function love.update(dt)
 
   clock = clock + dt
   ball.x = gameW() / 2
-  floorY = love.getHeight() - ball.r - 50
+  floorY = love.getHeight() - ball.r - 100
   local wasInAir = ball.y < floorY
   ball.vy = ball.vy + GRAVITY * dt
   ball.y = ball.y + ball.vy * dt
@@ -197,7 +208,7 @@ end
 local function drawHeight()
   local h = math.max(0, math.floor((floorY - ball.y) / 10))
   local text = h .. "m"
-  local wob = love.math.newRandomGenerator(math.floor(love.timer.getTime() * 8))
+  local wob = love.math.newRandomGenerator(math.floor(love.timer.getTime() * 0))
   local hit = fx.t < 0.3 and 3 or 0
   love.graphics.push()
   love.graphics.translate(34 + wob:random() + (wob:random() - 0.5) * hit, 30 + wob:random())
@@ -216,7 +227,58 @@ local function drawHeight()
   love.graphics.pop()
 end
 
+local w = love.graphics.getWidth() / 2;
+local H = love.graphics.getHeight();
+local h = H / 4;
+
+function drawTitle(startX, startY)
+    local boxX = startX + (1 / 16) * w
+    local boxW = w - (1 / 8) * w
+    local centerX = boxX + boxW / 2
+
+    local title = "UPGRADES"
+    local textW = bigFont:getWidth(title)
+    local textH = bigFont:getHeight()
+    local textX = centerX - textW / 2
+    local textY = startY + (1 / 2) * h - textH / 2
+    inkText(title, bigFont, textX, textY, 3)
+
+    local lineW = boxW * 0.85
+    local lineX1 = centerX - lineW / 2
+    local lineX2 = centerX + lineW / 2
+    local lineY = startY + (5 / 6) * h
+
+    love.graphics.setLineWidth(7)
+    love.graphics.setColor(INK)
+    love.graphics.line(lineX1 - 2, lineY, lineX2 + 2, lineY)
+
+    love.graphics.setLineWidth(3)
+    love.graphics.setColor(PAPER)
+    love.graphics.line(lineX1, lineY, lineX2, lineY)
+    love.graphics.setLineWidth(1)
+end
+
+function drawUpgrade(startX, startY)
+    love.graphics.setColor(0, 0, 0)
+    love.graphics.rectangle("fill", startX + (1/16) * w, startY, w - (1/8) * w, (3/4) * h, 10, 10);
+end
+
+
+function drawPanel(startX, startY)
+    -- top is title + line
+    drawTitle(startX, 0);
+    -- top middle is velocity upgrades
+    drawUpgrade(startX, h);
+    -- bottom middle is combo upgrades
+    drawUpgrade(startX, 2 * h);
+    -- bottom is money upgrades
+    drawUpgrade(startX, 3 * h);
+end
+
+
+
 function love.draw()
+
     local W, H = love.getWidth(), love.getHeight()
     local gw = gameW()
     local top = cam - 60
@@ -230,27 +292,30 @@ function love.draw()
     love.graphics.setLineJoin("bevel")
     love.graphics.translate(sx, sy - cam)
 
-    love.graphics.setColor(love.math.colorFromBytes(0x4a, 0x7c, 0x59))
-    love.graphics.rectangle("fill", 0, floorY + ball.r, gw, H)
     local ground = floorY + ball.r
+    love.graphics.setColor(love.math.colorFromBytes(0x4a, 0x7c, 0x59))
+    for x = -20, gw + 20, 4 do
+        love.graphics.polygon("fill", x, hillY(x), x + 4, hillY(x + 4), x + 4, H + 200, x, H + 200)
+    end
     local still = love.math.newRandomGenerator(7)
     love.graphics.setColor(0, 0, 0, 0.18)
-    local prev = ground + 8 + still:random() * 6
+    local prev = 8 + still:random() * 6
     for x = 0, gw, 20 do
-        local nxt = ground + 8 + still:random() * 6
-        love.graphics.polygon("fill", x, ground, x + 20, ground, x + 20, nxt, x, prev)
+        local nxt = 8 + still:random() * 6
+        love.graphics.polygon("fill", x, hillY(x), x + 20, hillY(x + 20), x + 20, hillY(x + 20) + nxt, x, hillY(x) + prev)
         prev = nxt
     end
     love.graphics.setColor(0, 0, 0, 0.12)
     love.graphics.setLineWidth(2)
     for x = 8, gw, 14 do
-        local hx, hy = x + still:random() * 6, ground + 16 + still:random() * 10
+        local hx = x + still:random() * 6
+        local hy = hillY(hx) + 16 + still:random() * 10
         love.graphics.line(hx, hy, hx - 5 - still:random() * 4, hy + 6 + still:random() * 5)
     end
     love.graphics.setLineWidth(1)
 
     local s = math.max(0.15, 1 - (floorY - ball.y) / 600)
-    local boil = love.math.newRandomGenerator(math.floor(love.timer.getTime() * 8))
+    local boil = love.math.newRandomGenerator(3)
     local function blob(rx, ry, ox)
         local pts = {}
         for i = 0, 13 do
@@ -311,7 +376,6 @@ function love.draw()
     love.graphics.setColor(1, 1, 1, 0.3)
     love.graphics.line(gw, 0, gw, H)
     love.graphics.setColor(1, 1, 1)
-end
 
-local width = love.graphics.getWidth() / 2;
-local H = love.graphics.getHeight();
+    drawPanel(w, 0);
+end
