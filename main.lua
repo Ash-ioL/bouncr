@@ -1,7 +1,7 @@
 love.getWidth = love.graphics.getWidth
 love.getHeight = love.graphics.getHeight
 
-local ball = { x = love.getWidth() / 5, y = love.getHeight(), r = 30 }
+local ball = { x = love.getWidth() / 2, y = love.getHeight(), r = 30 }
 local jumpHeight = 200
 local acceleration = -9.8
 local prevTime = -1;
@@ -73,31 +73,86 @@ function squishDraw(ball)
   love.graphics.setColor(1, 1, 1, 1)
 end
 
-local GRAVITY, JUMP = 1500, 900
+local GRAVITY, JUMP = 1500, 1600
 local floorY = love.getHeight() - ball.r
 ball.y = floorY
 ball.vy = 0
+local cam = 0
+local following = false
+local SUPER, TIMING = JUMP * 1.4, 0.15
+local clock, lastClick, landTime, tried = 0, -1, -1, false
 
 local yourMousepressed = love.mousepressed
 function love.mousepressed(x, y, button)
-  yourMousepressed(x, y, button)
+  if button ~= 1 then return end
+  y = y + cam
+  if ball.y < floorY then
+    if not tried then lastClick, tried = clock, true end
+    return
+  end
   local dx, dy = x - ball.x, y - ball.y
-  if button == 1 and dx * dx + dy * dy <= ball.r * ball.r then
-    ball.vy = -JUMP
+  if dx * dx + dy * dy <= ball.r * ball.r then
+    yourMousepressed(x, y, button)
+    local onTime = not tried and clock - landTime <= TIMING
+    ball.vy = onTime and -SUPER or -JUMP
+    tried = false
   end
 end
 
 function love.update(dt)
+  clock = clock + dt
+  ball.x = love.getWidth() / 2
+  floorY = love.getHeight() - ball.r - 50
   local wasInAir = ball.y < floorY
   ball.vy = ball.vy + GRAVITY * dt
   ball.y = ball.y + ball.vy * dt
+  if ball.y - ball.r < 0 then following = true end
   if ball.y >= floorY then
-    if wasInAir then squishLand(ball.x, ball.y + ball.r) end
     ball.y, ball.vy = floorY, 0
+    following = false
+    if wasInAir then
+      squishLand(ball.x, ball.y + ball.r)
+      landTime = clock
+      if clock - lastClick <= TIMING then
+        squishLaunch()
+        ball.vy = -SUPER
+        tried = false
+      end
+    end
   end
   squishUpdate(dt)
+  local target = following and math.min(0, ball.y - floorY) or 0
+  cam = math.max(target, cam + (target - cam) * math.min(1, 5 * dt))
 end
 
 function love.draw()
+  love.graphics.clear(0.08, 0.08, 0.14)
+  love.graphics.translate(0, -cam)
+  love.graphics.setColor(1, 1, 1, 0.15)
+  for y = math.floor(cam / 100) * 100, cam + love.getHeight(), 100 do
+    love.graphics.line(0, y, love.getWidth(), y)
+  end
+  love.graphics.setColor(0.2, 0.6, 1)
+  love.graphics.rectangle("fill", 0, floorY + ball.r, love.getWidth(), love.getHeight())
+  love.graphics.setColor(1, 1, 1)
   squishDraw(ball)
+end
+
+local font = love.graphics.newFont(28)
+
+function love.draw()
+  love.graphics.clear(0.08, 0.08, 0.14)
+  love.graphics.translate(0, -cam)
+  love.graphics.setColor(1, 1, 1, 0.15)
+  for y = math.floor(cam / 100) * 100, cam + love.getHeight(), 100 do
+    love.graphics.line(0, y, love.getWidth(), y)
+  end
+  love.graphics.setColor(0.2, 0.6, 1)
+  love.graphics.rectangle("fill", 0, floorY + ball.r, love.getWidth(), love.getHeight())
+  love.graphics.setColor(1, 1, 1)
+  squishDraw(ball)
+
+  love.graphics.origin()
+  love.graphics.setFont(font)
+  love.graphics.print("Height: " .. math.floor((floorY - ball.y) / 10) .. " m", 50, 100)
 end
