@@ -1,41 +1,23 @@
 love.getWidth = love.graphics.getWidth
 love.getHeight = love.graphics.getHeight
 
-local ball = { x = love.getWidth() / 2, y = love.getHeight(), r = 30 }
-local jumpHeight = 200
-local acceleration = -9.8
-local prevTime = -1;
-function love.mousepressed(x, y, button)
-    local dx, dy = x - ball.x, y - ball.y
-    local og = ball.y
-    if button == 1 and dx * dx + dy * dy <= ball.r * ball.r then
-        squishLaunch()
-        while ball.y ~= og do
-            ball.y = ball.y + acceleration
-            acceleration = acceleration + 0.2
-            if(ball.y <= love.getHeight()) then
-                ball.y = love.getHeight()
-                squishLand()
-            end
-        end
-    end
-end
-
-function updateLoop()
-    if (prevTime == -1) then
-        prevTime = os.time();
-    else
-        local curTime = os.time();
-        local dt = prevTime - curTime;
-        prevTime = curTime;
-    end
-    squishUpdate()
-end
-
+local ball = { x = 0, y = 0, vy = 0, r = 30 }
+local GRAVITY, JUMP = 1500, 1600
+local SUPER, TIMING = JUMP * 1.4, 0.15
+local floorY = 0
+local cam, following = 0, false
+local clock, lastClick, landTime, tried = 0, -1, -1, false
 local squish = { sx = 1, sy = 1 }
 local drops = {}
+local bigFont = love.graphics.newFont(44)
+local smallFont = love.graphics.newFont(16)
 
-function squishLand(x, y)
+local fx = { t = 99, freeze = 0, shake = 0, x = 0, y = 0, seed = 0 }
+local FREEZE, STEP = 0.12, 1 / 12
+
+local function gameW() return love.getWidth() / 2 end
+
+local function squishLand(x, y)
   squish.sx, squish.sy = 1.4, 0.6
   for i = 1, 12 do
     local angle = math.pi + love.math.random() * math.pi
@@ -44,47 +26,24 @@ function squishLand(x, y)
   end
 end
 
-function squishLaunch()
-  squish.sx, squish.sy = 0.7, 1.3
+local function squishLaunch()
+  squish.sx, squish.sy = 0.6, 1.5
 end
 
-function squishUpdate(dt)
-  squish.sx = squish.sx + (1 - squish.sx) * 10 * dt
-  squish.sy = squish.sy + (1 - squish.sy) * 10 * dt
-  for i = #drops, 1, -1 do
-    local d = drops[i]
-    d.vy = d.vy + 800 * dt
-    d.x, d.y = d.x + d.vx * dt, d.y + d.vy * dt
-    d.life = d.life - dt
-    if d.life <= 0 then table.remove(drops, i) end
-  end
+local function startImpact()
+  fx.t, fx.freeze, fx.shake = 0, FREEZE, 18
+  fx.x, fx.y = ball.x, floorY + ball.r
+  fx.seed = love.math.random(1, 1000000)
 end
 
-function squishDraw(ball)
-  love.graphics.push()
-  love.graphics.translate(ball.x, ball.y + ball.r)
-  love.graphics.scale(squish.sx, squish.sy)
-  love.graphics.circle("fill", 0, -ball.r, ball.r)
-  love.graphics.pop()
-  for _, d in ipairs(drops) do
-    love.graphics.setColor(1, 1, 1, d.life)
-    love.graphics.circle("fill", d.x, d.y, 4)
-  end
-  love.graphics.setColor(1, 1, 1, 1)
+function love.load()
+  ball.x = gameW() / 2
+  floorY = love.getHeight() - ball.r - 50
+  ball.y = floorY
 end
 
-local GRAVITY, JUMP = 1500, 1600
-local floorY = love.getHeight() - ball.r
-ball.y = floorY
-ball.vy = 0
-local cam = 0
-local following = false
-local SUPER, TIMING = JUMP * 1.4, 0.15
-local clock, lastClick, landTime, tried = 0, -1, -1, false
-
-local yourMousepressed = love.mousepressed
 function love.mousepressed(x, y, button)
-  if button ~= 1 then return end
+  if button ~= 1 or x >= gameW() then return end
   y = y + cam
   if ball.y < floorY then
     if not tried then lastClick, tried = clock, true end
@@ -92,7 +51,7 @@ function love.mousepressed(x, y, button)
   end
   local dx, dy = x - ball.x, y - ball.y
   if dx * dx + dy * dy <= ball.r * ball.r then
-    yourMousepressed(x, y, button)
+    squishLaunch()
     local onTime = not tried and clock - landTime <= TIMING
     ball.vy = onTime and -SUPER or -JUMP
     tried = false
@@ -100,8 +59,12 @@ function love.mousepressed(x, y, button)
 end
 
 function love.update(dt)
+  fx.t = fx.t + dt
+  fx.shake = math.max(0, fx.shake - dt * 40)
+  if fx.freeze > 0 then fx.freeze = fx.freeze - dt return end
+
   clock = clock + dt
-  ball.x = love.getWidth() / 2
+  ball.x = gameW() / 2
   floorY = love.getHeight() - ball.r - 50
   local wasInAir = ball.y < floorY
   ball.vy = ball.vy + GRAVITY * dt
@@ -112,6 +75,7 @@ function love.update(dt)
     following = false
     if wasInAir then
       squishLand(ball.x, ball.y + ball.r)
+      startImpact()
       landTime = clock
       if clock - lastClick <= TIMING then
         squishLaunch()
@@ -120,39 +84,204 @@ function love.update(dt)
       end
     end
   end
-  squishUpdate(dt)
+
+  local st = math.min(0.5, math.abs(ball.vy) / 3000)
+  squish.sx = squish.sx + ((1 - st * 0.5) - squish.sx) * 10 * dt
+  squish.sy = squish.sy + ((1 + st) - squish.sy) * 10 * dt
+  for i = #drops, 1, -1 do
+    local d = drops[i]
+    d.vy = d.vy + 800 * dt
+    d.x, d.y = d.x + d.vx * dt, d.y + d.vy * dt
+    d.life = d.life - dt
+    if d.life <= 0 then table.remove(drops, i) end
+  end
+
   local target = following and math.min(0, ball.y - floorY) or 0
   cam = math.max(target, cam + (target - cam) * math.min(1, 5 * dt))
 end
 
-function love.draw()
-  love.graphics.clear(0.08, 0.08, 0.14)
-  love.graphics.translate(0, -cam)
-  love.graphics.setColor(1, 1, 1, 0.15)
-  for y = math.floor(cam / 100) * 100, cam + love.getHeight(), 100 do
-    love.graphics.line(0, y, love.getWidth(), y)
-  end
-  love.graphics.setColor(0.2, 0.6, 1)
-  love.graphics.rectangle("fill", 0, floorY + ball.r, love.getWidth(), love.getHeight())
-  love.graphics.setColor(1, 1, 1)
-  squishDraw(ball)
+local function ballShape(ox, oy, k)
+  ox, oy, k = ox or 0, oy or 0, k or 1
+  love.graphics.ellipse("fill", ball.x + ox, ball.y + ball.r - ball.r * squish.sy + oy, ball.r * squish.sx * k, ball.r * squish.sy * k)
 end
 
-local font = love.graphics.newFont(28)
+local function wedges(rng, count)
+  for i = 1, count do
+    local a = rng:random() * math.pi * 2
+    local w = 0.015 + rng:random() * 0.05
+    local inner = 45 + rng:random() * 120
+    local outer = inner + 150 + rng:random() * 700
+    local bend = (rng:random() - 0.5) * 0.08
+    love.graphics.polygon("fill",
+      fx.x + math.cos(a) * inner, fx.y + math.sin(a) * inner,
+      fx.x + math.cos(a - w + bend) * outer, fx.y + math.sin(a - w + bend) * outer,
+      fx.x + math.cos(a + w + bend) * outer, fx.y + math.sin(a + w + bend) * outer)
+  end
+end
+
+local function jaggedRing(rng, r, width)
+  local pts = {}
+  for i = 0, 15 do
+    local a = i / 16 * math.pi * 2 + (rng:random() - 0.5) * 0.25
+    local rr = r * (0.8 + rng:random() * 0.4)
+    pts[#pts + 1] = fx.x + math.cos(a) * rr
+    pts[#pts + 1] = fx.y + math.sin(a) * rr * 0.45
+  end
+  pts[#pts + 1], pts[#pts + 2] = pts[1], pts[2]
+  love.graphics.setLineWidth(width)
+  love.graphics.line(pts)
+  love.graphics.setLineWidth(1)
+end
+
+local CRACKS = {
+  { 0, 0, -14, 3, -26, 1, -38, 7, -55, 6, -70, 12 },
+  { -38, 7, -45, 16 },
+  { 0, 0, -9, 8, -21, 10, -30, 19 },
+  { 0, 0, 15, 2, 27, 8, 41, 6, 57, 11, 72, 9 },
+  { 41, 6, 48, 15 },
+  { 0, 0, 11, 7, 20, 14, 33, 16 },
+}
+
+local function cracks()
+  love.graphics.setLineWidth(3)
+  for _, c in ipairs(CRACKS) do
+    local pts = {}
+    for i = 1, #c, 2 do
+      pts[i], pts[i + 1] = fx.x + c[i], fx.y + c[i + 1]
+    end
+    love.graphics.line(pts)
+  end
+  love.graphics.setLineWidth(1)
+end
+
+local INK, PAPER = { 0.1, 0.18, 0.14 }, { 0.96, 0.95, 0.87 }
+
+local function inkText(text, font, x, y, t)
+  love.graphics.setFont(font)
+  love.graphics.setColor(INK)
+  for ox = -t, t do
+    for oy = -t, t do
+      love.graphics.print(text, x + ox, y + oy)
+    end
+  end
+  love.graphics.setColor(PAPER)
+  love.graphics.print(text, x, y)
+end
+
+local function drawHeight()
+  local h = math.max(0, math.floor((floorY - ball.y) / 10))
+  local text = h .. "m"
+  local wob = love.math.newRandomGenerator(math.floor(love.timer.getTime() * 8))
+  local hit = fx.t < 0.3 and 3 or 0
+  love.graphics.push()
+  love.graphics.translate(34 + wob:random() + (wob:random() - 0.5) * hit, 30 + wob:random())
+  love.graphics.rotate(-0.07 + (wob:random() - 0.5) * 0.01)
+  inkText("HEIGHT", smallFont, 4, 0, 2)
+  inkText(text, bigFont, 0, 16, 3)
+  local w = bigFont:getWidth(text)
+  love.graphics.setLineWidth(7)
+  love.graphics.setColor(INK)
+  love.graphics.line(-2, 74, w * 0.5, 78, w + 6, 72)
+  love.graphics.setLineWidth(3)
+  love.graphics.setColor(PAPER)
+  love.graphics.line(0, 73, w * 0.5, 76, w + 4, 71)
+  love.graphics.setLineWidth(1)
+  love.graphics.pop()
+end
 
 function love.draw()
-  love.graphics.clear(0.08, 0.08, 0.14)
-  love.graphics.translate(0, -cam)
-  love.graphics.setColor(1, 1, 1, 0.15)
-  for y = math.floor(cam / 100) * 100, cam + love.getHeight(), 100 do
-    love.graphics.line(0, y, love.getWidth(), y)
+  local W, H = love.getWidth(), love.getHeight()
+  local gw = gameW()
+  local top = cam - 60
+
+  local srng = love.math.newRandomGenerator(fx.seed + math.floor(fx.t * 24))
+  local sx = (srng:random() * 2 - 1) * fx.shake
+  local sy = (srng:random() * 2 - 1) * fx.shake
+
+  love.graphics.clear(love.math.colorFromBytes(0x68, 0xb0, 0xab))
+  love.graphics.setScissor(0, 0, gw, H)
+  love.graphics.setLineJoin("bevel")
+  love.graphics.translate(sx, sy - cam)
+
+  love.graphics.setColor(love.math.colorFromBytes(0x4a, 0x7c, 0x59))
+  love.graphics.rectangle("fill", 0, floorY + ball.r, gw, H)
+  local ground = floorY + ball.r
+  local still = love.math.newRandomGenerator(7)
+  love.graphics.setColor(0, 0, 0, 0.18)
+  local prev = ground + 8 + still:random() * 6
+  for x = 0, gw, 20 do
+    local nxt = ground + 8 + still:random() * 6
+    love.graphics.polygon("fill", x, ground, x + 20, ground, x + 20, nxt, x, prev)
+    prev = nxt
   end
-  love.graphics.setColor(0.2, 0.6, 1)
-  love.graphics.rectangle("fill", 0, floorY + ball.r, love.getWidth(), love.getHeight())
+  love.graphics.setColor(0, 0, 0, 0.12)
+  love.graphics.setLineWidth(2)
+  for x = 8, gw, 14 do
+    local hx, hy = x + still:random() * 6, ground + 16 + still:random() * 10
+    love.graphics.line(hx, hy, hx - 5 - still:random() * 4, hy + 6 + still:random() * 5)
+  end
+  love.graphics.setLineWidth(1)
+
+  local s = math.max(0.15, 1 - (floorY - ball.y) / 600)
+  local boil = love.math.newRandomGenerator(math.floor(love.timer.getTime() * 8))
+  local function blob(rx, ry, ox)
+    local pts = {}
+    for i = 0, 13 do
+      local a = i / 14 * math.pi * 2
+      local j = 0.92 + boil:random() * 0.16
+      pts[#pts + 1] = ball.x + ox + math.cos(a) * rx * j
+      pts[#pts + 1] = ground + ry * 1.1 + math.sin(a) * ry * j
+    end
+    love.graphics.polygon("fill", pts)
+  end
+  love.graphics.setColor(0, 0, 0, 0.14 * s)
+  blob(ball.r * 1.5 * s, 6 * s, 0)
+  love.graphics.setColor(0, 0, 0, 0.3 * s)
+  blob(ball.r * 0.9 * s, 4 * s, ball.r * 0.15 * s)
+
+  if fx.t >= FREEZE and fx.t < FREEZE + 0.5 then
+    love.graphics.setColor(0.03, 0.08, 0.2)
+    cracks()
+  end
+
+  love.graphics.setColor(0.78, 0.8, 0.82)
+  ballShape()
   love.graphics.setColor(1, 1, 1)
-  squishDraw(ball)
+  ballShape(-ball.r * 0.12 * squish.sx, -ball.r * 0.12 * squish.sy, 0.85)
+  for _, d in ipairs(drops) do
+    love.graphics.setColor(1, 1, 1, d.life)
+    love.graphics.circle("fill", d.x, d.y, 4)
+  end
+
+  local rng = love.math.newRandomGenerator(fx.seed + math.floor(fx.t / STEP))
+  if fx.t < 0.04 then
+    love.graphics.setColor(1, 1, 1)
+    love.graphics.rectangle("fill", -50, top, gw + 100, H + 120)
+    love.graphics.setColor(0, 0, 0)
+    wedges(rng, 22)
+    ballShape()
+  elseif fx.t < FREEZE then
+    love.graphics.setColor(0, 0, 0)
+    love.graphics.rectangle("fill", -50, top, gw + 100, H + 120)
+    love.graphics.setColor(1, 1, 1)
+    wedges(rng, 28)
+    ballShape()
+    jaggedRing(rng, ball.r * 2.2, 4)
+  elseif fx.t < FREEZE + STEP * 3 then
+    local k = math.floor((fx.t - FREEZE) / STEP)
+    love.graphics.setColor(1, 1, 1)
+    jaggedRing(rng, 70 + k * 70, 6 - k * 2)
+    if k == 0 then wedges(rng, 8) end
+  end
 
   love.graphics.origin()
-  love.graphics.setFont(font)
-  love.graphics.print("Height: " .. math.floor((floorY - ball.y) / 10) .. " m", 50, 100)
+  love.graphics.setColor(1, 1, 1)
+  drawHeight()
+  love.graphics.setScissor()
+
+  love.graphics.setColor(0.12, 0.12, 0.18)
+  love.graphics.rectangle("fill", gw, 0, W - gw, H)
+  love.graphics.setColor(1, 1, 1, 0.3)
+  love.graphics.line(gw, 0, gw, H)
+  love.graphics.setColor(1, 1, 1)
 end
