@@ -51,6 +51,7 @@ function love.load()
   ball.x = gameW() / 2
   floorY = love.getHeight() - ball.r - 100
   ball.y = floorY
+  loadClouds()
 end
 
 function love.mousepressed(x, y, button)
@@ -109,6 +110,7 @@ function love.update(dt)
 
   local target = following and math.min(0, ball.y - floorY) or 0
   cam = math.max(target, cam + (target - cam) * math.min(1, 5 * dt))
+  updateClouds(dt)
 end
 
 local function ballShape(ox, oy, k)
@@ -208,11 +210,8 @@ end
 local function drawHeight()
   local h = math.max(0, math.floor((floorY - ball.y) / 10))
   local text = h .. "m"
-  local wob = love.math.newRandomGenerator(math.floor(love.timer.getTime() * 0))
   local hit = fx.t < 0.3 and 3 or 0
   love.graphics.push()
-  love.graphics.translate(34 + wob:random() + (wob:random() - 0.5) * hit, 30 + wob:random())
-  love.graphics.rotate(-0.07 + (wob:random() - 0.5) * 0.01)
   inkText("HEIGHT", smallFont, 4, 0, 2)
   inkText(text, bigFont, 0, 16, 3)
   local w = bigFont:getWidth(text)
@@ -258,9 +257,57 @@ function drawTitle(startX, startY)
     love.graphics.setLineWidth(1)
 end
 
-function drawUpgrade(startX, startY)
+function drawUpgrade(startX, startY, cost)
     love.graphics.setColor(0, 0, 0)
-    love.graphics.rectangle("fill", startX + (1/16) * w, startY, w - (1/8) * w, (3/4) * h, 10, 10);
+    love.graphics.rectangle("fill", startX + (1 / 16) * w, startY, w - (1 / 8) * w, (3 / 4) * h, 10, 10);
+    love.graphics.setColor(0.5, 0.5, 0.5);
+    love.graphics.rectangle("fill", startX + w/16 + h / 8, startY + h/8, h / 2, h / 2, 10, 10);
+    love.graphics.circle("fill", startX + 15 * w / 16 - 5 * h / 16, startY + 3 * h / 8, h / 4);
+
+    love.graphics.print("Upgrade Name", smallFont, startX + w / 16 + h / 2 + 10, startY + h / 8 + 5);
+    love.graphics.print("Cost: " .. cost, smallFont, startX + 15 * w / 16 - 5 * h / 16 - smallFont:getWidth("Cost: 100") / 2, startY + 3 * h / 8 + h / 4 + 5);
+end
+
+local cloudImgs, clouds, cloudTop = {}, {}, 0
+
+function loadClouds()
+  for i = 1, 4 do
+    local file = "cloud" .. i .. ".png"
+    if love.filesystem.getInfo(file) then
+      table.insert(cloudImgs, love.graphics.newImage(file))
+    end
+  end
+  cloudTop = floorY - 120
+end
+
+local function addCloud(y)
+  local img = cloudImgs[love.math.random(#cloudImgs)]
+  local s = (80 + love.math.random() * 110) / img:getWidth()
+  table.insert(clouds, {
+    img = img, s = s, y = y,
+    x = love.math.random() * gameW() - img:getWidth() * s / 2,
+    speed = 8 + love.math.random() * 22,
+  })
+end
+
+function updateClouds(dt)
+  while #cloudImgs > 0 and cloudTop > cam - 300 do
+    cloudTop = cloudTop - (140 + love.math.random() * 180)
+    addCloud(cloudTop)
+  end
+  for _, c in ipairs(clouds) do
+    c.x = c.x + c.speed * dt
+    if c.x > gameW() then c.x = -c.img:getWidth() * c.s end
+  end
+end
+
+function drawClouds()
+  love.graphics.setColor(1, 1, 1)
+  for _, c in ipairs(clouds) do
+    if c.y > cam - 300 and c.y < cam + love.getHeight() then
+      love.graphics.draw(c.img, c.x, c.y, 0, c.s, c.s)
+    end
+  end
 end
 
 
@@ -268,11 +315,11 @@ function drawPanel(startX, startY)
     -- top is title + line
     drawTitle(startX, 0);
     -- top middle is velocity upgrades
-    drawUpgrade(startX, h);
+    drawUpgrade(startX, h, 100);
     -- bottom middle is combo upgrades
-    drawUpgrade(startX, 2 * h);
+    drawUpgrade(startX, 2 * h, 100);
     -- bottom is money upgrades
-    drawUpgrade(startX, 3 * h);
+    drawUpgrade(startX, 3 * h, 100);
 end
 
 
@@ -291,6 +338,7 @@ function love.draw()
     love.graphics.setScissor(0, 0, gw, H)
     love.graphics.setLineJoin("bevel")
     love.graphics.translate(sx, sy - cam)
+    drawClouds()
 
     local ground = floorY + ball.r
     love.graphics.setColor(love.math.colorFromBytes(0x4a, 0x7c, 0x59))
@@ -376,6 +424,5 @@ function love.draw()
     love.graphics.setColor(1, 1, 1, 0.3)
     love.graphics.line(gw, 0, gw, H)
     love.graphics.setColor(1, 1, 1)
-
     drawPanel(w, 0);
 end
