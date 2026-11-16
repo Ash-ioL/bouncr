@@ -61,13 +61,10 @@ function love.mousepressed(x, y, button)
     if not tried then lastClick, tried = clock, true end
     return
   end
-  local dx, dy = x - ball.x, y - ball.y
-  if dx * dx + dy * dy <= ball.r * ball.r then
-    squishLaunch()
-    local onTime = not tried and clock - landTime <= TIMING
-    ball.vy = onTime and -SUPER or -JUMP
-    tried = false
-  end
+  squishLaunch()
+  local onTime = not tried and clock - landTime <= TIMING
+  ball.vy = onTime and -SUPER or -JUMP
+  tried = false
 end
 
 function love.update(dt)
@@ -264,8 +261,8 @@ function drawUpgrade(startX, startY, cost)
     love.graphics.rectangle("fill", startX + w/16 + h / 8, startY + h/8, h / 2, h / 2, 10, 10);
     love.graphics.circle("fill", startX + 15 * w / 16 - 5 * h / 16, startY + 3 * h / 8, h / 4);
 
-    love.graphics.print("Upgrade Name", smallFont, startX + w / 16 + h / 2 + 10, startY + h / 8 + 5);
-    love.graphics.print("Cost: " .. cost, smallFont, startX + 15 * w / 16 - 5 * h / 16 - smallFont:getWidth("Cost: 100") / 2, startY + 3 * h / 8 + h / 4 + 5);
+    love.graphics.print("Upgrade Name", smallFont, startX + h, startY + h / 8);
+    love.graphics.print("Cost: " .. cost, smallFont, startX + h, startY + 3 * h / 8);
 end
 
 local cloudImgs, clouds, cloudTop = {}, {}, 0
