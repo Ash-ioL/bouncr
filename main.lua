@@ -9,7 +9,9 @@ local cam, following = 0, false
 local clock, lastClick, landTime, tried = 0, -1, -1, false
 local squish = { sx = 1, sy = 1 }
 local drops = {}
+local started = false
 local bigFont = love.graphics.newFont(44)
+local medFont = love.graphics.newFont(20)
 local smallFont = love.graphics.newFont(16)
 
 local fx = { t = 99, freeze = 0, shake = 0, x = 0, y = 0, seed = 0 }
@@ -55,6 +57,10 @@ function love.load()
 end
 
 function love.mousepressed(x, y, button)
+    if not started then
+        if button == 1 then started = true end
+        return
+    end
   if button ~= 1 or x >= gameW() then return end
   y = y + cam
   if ball.y < floorY then
@@ -205,22 +211,24 @@ local function inkText(text, font, x, y, t)
 end
 
 local function drawHeight()
-  local h = math.max(0, math.floor((floorY - ball.y) / 10))
-  local text = h .. "m"
-  local hit = fx.t < 0.3 and 3 or 0
-  love.graphics.push()
-  inkText("HEIGHT", smallFont, 4, 0, 2)
-  inkText(text, bigFont, 0, 16, 3)
-  local w = bigFont:getWidth(text)
-  love.graphics.setLineWidth(7)
-  love.graphics.setColor(INK)
-  love.graphics.line(-2, 74, w * 0.5, 78, w + 6, 72)
-  love.graphics.setLineWidth(3)
-  love.graphics.setColor(PAPER)
-  love.graphics.line(0, 73, w * 0.5, 76, w + 4, 71)
-  love.graphics.setLineWidth(1)
-  inkText("SPEED " .. math.floor(math.abs(ball.vy)), smallFont, 4, 86, 2)
-  love.graphics.pop()
+    local h = math.max(0, math.floor((floorY - ball.y) / 10))
+    local text = h .. "m"
+    local hit = fx.t < 0.3 and 3 or 0
+    love.graphics.push()
+    love.graphics.translate(34, 30)
+    love.graphics.rotate(-0.07)
+    inkText("HEIGHT", smallFont, 4, 0, 2)
+    inkText(text, bigFont, 0, 16, 3)
+    local w = bigFont:getWidth(text)
+    love.graphics.setLineWidth(7)
+    love.graphics.setColor(INK)
+    love.graphics.line(-2, 74, w * 0.5, 78, w + 6, 72)
+    love.graphics.setLineWidth(3)
+    love.graphics.setColor(PAPER)
+    love.graphics.line(0, 73, w * 0.5, 76, w + 4, 71)
+    love.graphics.setLineWidth(1)
+    inkText("SPEED " .. math.floor(math.abs(ball.vy)), smallFont, 4, 86, 2)
+    love.graphics.pop()
 end
 
 local w = love.graphics.getWidth() / 2;
@@ -254,15 +262,39 @@ function drawTitle(startX, startY)
     love.graphics.setLineWidth(1)
 end
 
-function drawUpgrade(startX, startY, cost)
+local costs = {100, 250, 500, 1000, 2500, 5000, "MAX"};
+
+function drawUpgrade(startX, startY, level)
+    local cost = costs[level+1];
     love.graphics.setColor(0, 0, 0)
     love.graphics.rectangle("fill", startX + (1 / 16) * w, startY, w - (1 / 8) * w, (3 / 4) * h, 10, 10);
     love.graphics.setColor(0.5, 0.5, 0.5);
     love.graphics.rectangle("fill", startX + w/16 + h / 8, startY + h/8, h / 2, h / 2, 10, 10);
     love.graphics.circle("fill", startX + 15 * w / 16 - 5 * h / 16, startY + 3 * h / 8, h / 4);
+    love.graphics.setColor(0, 0, 0);
+    for i = 0, 5 do
+        love.graphics.arc("line",
+            startX + 15 * w / 16 - 5 * h / 16,
+            startY + 3 * h / 8,
+            h / 4,
+            math.pi * 2 / 6 * i,
+            math.pi * 2 / 6 * (i + 1)
+        );
+    end
+    love.graphics.setColor(0, 0.9, 0);
 
-    love.graphics.print("Upgrade Name", smallFont, startX + h, startY + h / 8);
-    love.graphics.print("Cost: " .. cost, smallFont, startX + h, startY + 3 * h / 8);
+    if level > 0 then for i = 1, level do
+        love.graphics.arc("fill",
+            startX + 15 * w / 16 - 5 * h / 16,
+            startY + 3 * h / 8,
+            h / 4,
+            math.pi * 2 / 6 * (i-1),
+            math.pi * 2 / 6 * (i)
+        );
+    end; end;
+    love.graphics.setColor(0, 0, 0)
+    love.graphics.print("Upgrade Name", medFont, startX + h * 7 / 8, startY + 3 * h / 16);
+    love.graphics.print("Cost: " .. cost .. "$", smallFont, startX + h * 7 / 8, startY + 7 * h / 16);
 end
 
 local cloudImgs, clouds, cloudTop = {}, {}, 0
@@ -312,17 +344,106 @@ function drawPanel(startX, startY)
     -- top is title + line
     drawTitle(startX, 0);
     -- top middle is velocity upgrades
-    drawUpgrade(startX, h, 100);
+    drawUpgrade(startX, h, 1);
     -- bottom middle is combo upgrades
-    drawUpgrade(startX, 2 * h, 100);
+    drawUpgrade(startX, 2 * h, 1);
     -- bottom is money upgrades
-    drawUpgrade(startX, 3 * h, 100);
+    drawUpgrade(startX, 3 * h, 1);
 end
 
+local titleFont = love.graphics.newFont(80)
+local startFont = love.graphics.newFont(28)
+local START_CLOUDS = {
+  { 0.02, 120, 300, 1, 12 },
+  { 0.55, 90, 360, 2, 8 },
+  { 0.78, 230, 260, 3, 15 },
+  { 0.25, 250, 220, 4, 10 },
+}
 
+local function startHillY(x, W, top)
+  local u = (x - W / 2) / (W * 0.55)
+  if math.abs(u) >= 1 then return top + 400 end
+  return top + (1 - math.sqrt(1 - u * u)) * 280 + math.sin(u * 9 + 0.6) * 10 * u * u
+end
+
+function drawStart()
+  local W, H = love.getWidth(), love.getHeight()
+  local t = love.timer.getTime()
+  love.graphics.clear(love.math.colorFromBytes(0x68, 0xb0, 0xab))
+
+  love.graphics.setColor(1, 1, 1)
+  for _, c in ipairs(START_CLOUDS) do
+    local img = cloudImgs[c[4]]
+    if img then
+      local s = c[3] / img:getWidth()
+      local x = (c[1] * W + t * c[5]) % (W + c[3]) - c[3]
+      love.graphics.draw(img, x, c[2] - img:getHeight() * s / 2, 0, s, s)
+    end
+  end
+
+  local top = H * 0.62
+  love.graphics.setColor(love.math.colorFromBytes(0x4a, 0x7c, 0x59))
+  for x = 0, W, 4 do
+    love.graphics.polygon("fill", x, startHillY(x, W, top), x + 4, startHillY(x + 4, W, top), x + 4, H, x, H)
+  end
+  local still = love.math.newRandomGenerator(7)
+  love.graphics.setColor(0, 0, 0, 0.18)
+  local prev = 8 + still:random() * 6
+  for x = 0, W, 20 do
+    local nxt = 8 + still:random() * 6
+    local a, b = startHillY(x, W, top), startHillY(x + 20, W, top)
+    love.graphics.polygon("fill", x, a, x + 20, b, x + 20, b + nxt, x, a + prev)
+    prev = nxt
+  end
+  love.graphics.setColor(0, 0, 0, 0.12)
+  love.graphics.setLineWidth(2)
+  for x = 8, W, 14 do
+    local hx = x + still:random() * 6
+    local hy = startHillY(hx, W, top) + 16 + still:random() * 10
+    love.graphics.line(hx, hy, hx - 5 - still:random() * 4, hy + 6 + still:random() * 5)
+  end
+  love.graphics.setLineWidth(1)
+
+  local r = 30
+  local hop = math.abs(math.sin(t * 2.5)) * 40
+  local bx, by = W / 2, top - r - hop
+  local sh = math.max(0.4, 1 - hop / 80)
+  love.graphics.setColor(0, 0, 0, 0.25 * sh)
+  love.graphics.ellipse("fill", bx, top + 3, r * 1.2 * sh, 5 * sh)
+  love.graphics.setColor(0.78, 0.8, 0.82)
+  love.graphics.circle("fill", bx, by, r)
+  love.graphics.setColor(1, 1, 1)
+  love.graphics.circle("fill", bx - r * 0.12, by - r * 0.12, r * 0.85)
+
+  local title = "BOUNCR"
+  local R = 420
+  local cx, cy = W / 2, 40 + R
+  local a = -(titleFont:getWidth(title) + (#title - 1) * 6) / 2 / R
+  for i = 1, #title do
+    local ch = title:sub(i, i)
+    local cw = titleFont:getWidth(ch)
+    local mid = a + cw / 2 / R
+    love.graphics.push()
+    love.graphics.translate(cx + math.sin(mid) * R, cy - math.cos(mid) * R)
+    love.graphics.rotate(mid)
+    inkText(ch, titleFont, -cw / 2, 0, 4)
+    love.graphics.pop()
+    a = a + (cw + 6) / R
+  end
+
+  if t % 1.2 < 0.8 then
+    local text = "click to start"
+    love.graphics.push()
+    love.graphics.translate(W / 2, 200)
+    love.graphics.rotate(-0.03)
+    inkText(text, startFont, -startFont:getWidth(text) / 2, 0, 2)
+    love.graphics.pop()
+  end
+  love.graphics.setColor(1, 1, 1)
+end
 
 function love.draw()
-
+    if not started then drawStart() return end
     local W, H = love.getWidth(), love.getHeight()
     local gw = gameW()
     local top = cam - 60
