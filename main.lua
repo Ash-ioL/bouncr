@@ -9,10 +9,15 @@ local cam, following = 0, false
 local clock, lastClick, landTime, tried = 0, -1, -1, false
 local squish = { sx = 1, sy = 1 }
 local drops = {}
+local money, peak = 0, 0
 local started = false
 local bigFont = love.graphics.newFont(44)
 local medFont = love.graphics.newFont(20)
 local smallFont = love.graphics.newFont(16)
+local jumpLevel = 1;
+local comboLevel = 1;
+local coinLevel = 1;
+local combo = 0;
 
 local fx = { t = 99, freeze = 0, shake = 0, x = 0, y = 0, seed = 0 }
 local FREEZE, STEP = 0.12, 1 / 12
@@ -69,7 +74,14 @@ function love.mousepressed(x, y, button)
   end
   squishLaunch()
   local onTime = not tried and clock - landTime <= TIMING
-  ball.vy = onTime and -SUPER or -JUMP
+    if onTime then
+        ball.vy = -SUPER
+        combo = combo + 1;
+    else
+        ball.vy = -JUMP
+        combo = 0;
+    end
+  if
   tried = false
 end
 
@@ -83,12 +95,15 @@ function love.update(dt)
   floorY = love.getHeight() - ball.r - 100
   local wasInAir = ball.y < floorY
   ball.vy = ball.vy + GRAVITY * dt
-  ball.y = ball.y + ball.vy * dt
+    ball.y = ball.y + ball.vy * dt
+    peak = math.max(peak, floorY - ball.y)
   if ball.y - ball.r < 0 then following = true end
   if ball.y >= floorY then
     ball.y, ball.vy = floorY, 0
     following = false
     if wasInAir then
+        money = money + math.floor(peak / 100 * (1 + comboLevel * 0.05 * combo))
+        peak = 0
       squishLand(ball.x, ball.y + ball.r)
       startImpact()
       landTime = clock
@@ -264,7 +279,7 @@ end
 
 local costs = {100, 250, 500, 1000, 2500, 5000, "MAX"};
 
-function drawUpgrade(startX, startY, level)
+function drawUpgrade(startX, startY, level, color)
     local cost = costs[level+1];
     love.graphics.setColor(0, 0, 0)
     love.graphics.rectangle("fill", startX + (1 / 16) * w, startY, w - (1 / 8) * w, (3 / 4) * h, 10, 10);
@@ -281,7 +296,7 @@ function drawUpgrade(startX, startY, level)
             math.pi * 2 / 6 * (i + 1)
         );
     end
-    love.graphics.setColor(0, 0.9, 0);
+    love.graphics.setColor(color);
 
     if level > 0 then for i = 1, level do
         love.graphics.arc("fill",
@@ -343,12 +358,10 @@ end
 function drawPanel(startX, startY)
     -- top is title + line
     drawTitle(startX, 0);
-    -- top middle is velocity upgrades
-    drawUpgrade(startX, h, 1);
-    -- bottom middle is combo upgrades
-    drawUpgrade(startX, 2 * h, 1);
-    -- bottom is money upgrades
-    drawUpgrade(startX, 3 * h, 1);
+
+    drawUpgrade(startX, h, jumpLevel, {1, 0.3, 0.3})
+    drawUpgrade(startX, 2*h, comboLevel, {0.3, 0.6, 1})
+    drawUpgrade(startX, 3*h, coinLevel, {0.3, 0.9, 0.4})
 end
 
 local titleFont = love.graphics.newFont(80)
@@ -434,14 +447,53 @@ function drawStart()
   if t % 1.2 < 0.8 then
     local text = "click to start"
     love.graphics.push()
-    love.graphics.translate(W / 2, 200)
+        love.graphics.translate(W / 2, 200)
+
     love.graphics.rotate(-0.03)
     inkText(text, startFont, -startFont:getWidth(text) / 2, 0, 2)
     love.graphics.pop()
   end
   love.graphics.setColor(1, 1, 1)
 end
+function spend(cost)
+  if money < cost then return false end
+  money = money - cost
+  return true
+end
 
+local moneyImg, moneyQuad
+
+local function loadMoney()
+  moneyImg = false
+  if not love.filesystem.getInfo("money.png") then return end
+  local data = love.image.newImageData("money.png")
+  local w, h = data:getDimensions()
+  local x1, y1, x2, y2 = w, h, 0, 0
+  for y = 0, h - 1, 8 do
+    for x = 0, w - 1, 8 do
+      local _, _, _, a = data:getPixel(x, y)
+      if a > 0.1 then
+        x1, y1 = math.min(x1, x), math.min(y1, y)
+        x2, y2 = math.max(x2, x), math.max(y2, y)
+      end
+    end
+  end
+  moneyImg = love.graphics.newImage(data, { mipmaps = true })
+  moneyQuad = love.graphics.newQuad(x1, y1, x2 - x1 + 8, y2 - y1 + 8, w, h)
+end
+
+function drawMoney(gw)
+  if moneyImg == nil then loadMoney() end
+  local text = tostring(money)
+  local tx = gw - bigFont:getWidth(text) - 20
+  inkText(text, bigFont, tx, 16, 3)
+  if moneyImg then
+    local _, _, qw, qh = moneyQuad:getViewport()
+    local s = bigFont:getHeight() * 0.85 / qh
+    love.graphics.setColor(1, 1, 1)
+    love.graphics.draw(moneyImg, moneyQuad, tx - qw * s - 6, 20, 0, s, s)
+  end
+end
 function love.draw()
     if not started then drawStart() return end
     local W, H = love.getWidth(), love.getHeight()
@@ -536,6 +588,7 @@ function love.draw()
     love.graphics.origin()
     love.graphics.setColor(1, 1, 1)
     drawHeight()
+    drawMoney(gw)
     love.graphics.setScissor()
     love.graphics.setColor(0.12, 0.12, 0.18)
     love.graphics.rectangle("fill", gw, 0, W - gw, H)
