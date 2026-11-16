@@ -2,8 +2,11 @@ love.getWidth = love.graphics.getWidth
 love.getHeight = love.graphics.getHeight
 
 local ball = { x = 0, y = 0, vy = 0, r = 30 }
+local costs = {50, 120, 250, 500, 1000, 2000, "MAX"};
 local GRAVITY, JUMP = 1500, 1600
-local SUPER, TIMING = JUMP * 1.4, 0.15
+local SUPER, TIMING = 1.4, 0.6
+local GOAL = 1500
+local MAX_COMBO = { [0] = 1, 2, 3, 5, 7, 10, 15 }
 local floorY = 0
 local cam, following = 0, false
 local clock, lastClick, landTime, tried = 0, -1, -1, false
@@ -11,13 +14,18 @@ local squish = { sx = 1, sy = 1 }
 local drops = {}
 local money, peak = 0, 0
 local started = false
+local won, winScreen = false, false
 local bigFont = love.graphics.newFont(44)
 local medFont = love.graphics.newFont(20)
 local smallFont = love.graphics.newFont(16)
-local jumpLevel = 1;
-local comboLevel = 1;
-local coinLevel = 1;
+local upgrades = {
+  { name = "SPEED", icon = "arrow.png", color = { 1, 0.3, 0.3 }, level = 0 },
+  { name = "COMBO", icon = "fist.png", color = { 0.3, 0.6, 1 }, level = 0 },
+  { name = "CASH", icon = "money.png", color = { 0.3, 0.9, 0.4 }, level = 0 },
+}
+local hover = nil
 local combo = 0;
+local windScroll = 0
 
 local fx = { t = 99, freeze = 0, shake = 0, x = 0, y = 0, seed = 0 }
 local FREEZE, STEP = 0.12, 1 / 12
@@ -46,12 +54,27 @@ end
 
 local function squishLaunch()
   squish.sx, squish.sy = 0.6, 1.5
+  playWoosh()
+end
+
+local function launch(super)
+  squishLaunch()
+  if super then
+    combo = math.min(combo + 1, MAX_COMBO[upgrades[2].level])
+  else
+    combo = 0
+  end
+  local v = JUMP * (1 + 0.2 * upgrades[1].level) * (1 + 0.05 * combo)
+  if super then v = v * SUPER end
+  ball.vy = -v
+  tried = false
 end
 
 local function startImpact()
   fx.t, fx.freeze, fx.shake = 0, FREEZE, 18
   fx.x, fx.y = ball.x, floorY + ball.r
   fx.seed = love.math.random(1, 1000000)
+  playImpact()
 end
 
 function love.load()
@@ -59,33 +82,42 @@ function love.load()
   floorY = love.getHeight() - ball.r - 100
   ball.y = floorY
   loadClouds()
+  startMusic()
+  loadImpactSound()
+  loadWoosh()
+  for _, u in ipairs(upgrades) do loadIcon(u.icon) end
 end
 
-function love.mousepressed(x, y, button)
-    if not started then
-        if button == 1 then started = true end
-        return
-    end
-  if button ~= 1 or x >= gameW() then return end
-  y = y + cam
+local function pressJump()
+  if not started then started = true return end
+  if winScreen then winScreen = false return end
   if ball.y < floorY then
     if not tried then lastClick, tried = clock, true end
     return
   end
-  squishLaunch()
-  local onTime = not tried and clock - landTime <= TIMING
-    if onTime then
-        ball.vy = -SUPER
-        combo = combo + 1;
-    else
-        ball.vy = -JUMP
-        combo = 0;
-    end
-  if
-  tried = false
+  launch(not tried and clock - landTime <= TIMING)
+end
+
+function love.mousepressed(x, y, button)
+  if button ~= 1 then return end
+  if started and not winScreen and x >= gameW() then
+    local i = upgradeAt(x, y)
+    if i then buy(i) end
+    return
+  end
+  pressJump()
+end
+
+function love.keypressed(key)
+  if key == "space" or key == "up" or key == "w" then pressJump() end
+end
+
+function love.mousemoved(x, y, dx, dy)
+  hover = started and upgradeAt(x, y) or nil
 end
 
 function love.update(dt)
+  if winScreen then return end
   fx.t = fx.t + dt
   fx.shake = math.max(0, fx.shake - dt * 40)
   if fx.freeze > 0 then fx.freeze = fx.freeze - dt return end
@@ -95,23 +127,21 @@ function love.update(dt)
   floorY = love.getHeight() - ball.r - 100
   local wasInAir = ball.y < floorY
   ball.vy = ball.vy + GRAVITY * dt
-    ball.y = ball.y + ball.vy * dt
-    peak = math.max(peak, floorY - ball.y)
+  ball.y = ball.y + ball.vy * dt
+  peak = math.max(peak, floorY - ball.y)
+  windScroll = windScroll - ball.vy * dt
+  if not won and floorY - ball.y >= GOAL * 10 then won, winScreen = true, true end
   if ball.y - ball.r < 0 then following = true end
   if ball.y >= floorY then
     ball.y, ball.vy = floorY, 0
     following = false
     if wasInAir then
-        money = money + math.floor(peak / 100 * (1 + comboLevel * 0.05 * combo))
-        peak = 0
+      money = money + math.floor(peak / 50 *(1 + 0.5 * upgrades[3].level) * (1 + 0.2 * combo))
+      peak = 0
       squishLand(ball.x, ball.y + ball.r)
       startImpact()
       landTime = clock
-      if clock - lastClick <= TIMING then
-        squishLaunch()
-        ball.vy = -SUPER
-        tried = false
-      end
+      if clock - lastClick <= TIMING then launch(true) end
     end
   end
 
@@ -128,6 +158,7 @@ function love.update(dt)
 
   local target = following and math.min(0, ball.y - floorY) or 0
   cam = math.max(target, cam + (target - cam) * math.min(1, 5 * dt))
+  cam = math.min(cam, ball.y - ball.r - 80)
   updateClouds(dt)
 end
 
@@ -213,7 +244,7 @@ function drawSpeedLines()
   love.graphics.setColor(1, 1, 1, 1)
 end
 
-local function inkText(text, font, x, y, t)
+local function inkText(text, font, x, y, t, fill)
   love.graphics.setFont(font)
   love.graphics.setColor(INK)
   for ox = -t, t do
@@ -221,14 +252,48 @@ local function inkText(text, font, x, y, t)
       love.graphics.print(text, x + ox, y + oy)
     end
   end
-  love.graphics.setColor(PAPER)
+  love.graphics.setColor(fill or PAPER)
   love.graphics.print(text, x, y)
+end
+
+local icons = {}
+
+function loadIcon(file)
+  if icons[file] ~= nil then return icons[file] end
+  icons[file] = false
+  if not love.filesystem.getInfo(file) then return false end
+  local data = love.image.newImageData(file)
+  local w, h = data:getDimensions()
+  local x1, y1, x2, y2 = w, h, 0, 0
+  for y = 0, h - 1, 8 do
+    for x = 0, w - 1, 8 do
+      local _, _, _, a = data:getPixel(x, y)
+      if a > 0.1 then
+        x1, y1 = math.min(x1, x), math.min(y1, y)
+        x2, y2 = math.max(x2, x), math.max(y2, y)
+      end
+    end
+  end
+  if x2 < x1 then x1, y1, x2, y2 = 0, 0, w - 8, h - 8 end
+  x1, y1 = math.max(0, x1 - 8), math.max(0, y1 - 8)
+  local cw, ch = math.min(w, x2 + 16) - x1, math.min(h, y2 + 16) - y1
+  local crop = love.image.newImageData(cw, ch)
+  crop:paste(data, 0, 0, x1, y1, cw, ch)
+  icons[file] = love.graphics.newImage(crop, { mipmaps = true })
+  return icons[file]
+end
+
+local function drawIcon(file, x, y, bw, bh)
+  local img = loadIcon(file)
+  if not img then return end
+  local s = math.min(bw / img:getWidth(), bh / img:getHeight())
+  love.graphics.setColor(1, 1, 1)
+  love.graphics.draw(img, x + (bw - img:getWidth() * s) / 2, y + (bh - img:getHeight() * s) / 2, 0, s, s)
 end
 
 local function drawHeight()
     local h = math.max(0, math.floor((floorY - ball.y) / 10))
     local text = h .. "m"
-    local hit = fx.t < 0.3 and 3 or 0
     love.graphics.push()
     love.graphics.translate(34, 30)
     love.graphics.rotate(-0.07)
@@ -243,6 +308,7 @@ local function drawHeight()
     love.graphics.line(0, 73, w * 0.5, 76, w + 4, 71)
     love.graphics.setLineWidth(1)
     inkText("SPEED " .. math.floor(math.abs(ball.vy)), smallFont, 4, 86, 2)
+    inkText("COMBO " .. combo .. "/" .. MAX_COMBO[upgrades[2].level], smallFont, 4, 106, 2)
     love.graphics.pop()
 end
 
@@ -277,39 +343,75 @@ function drawTitle(startX, startY)
     love.graphics.setLineWidth(1)
 end
 
-local costs = {100, 250, 500, 1000, 2500, 5000, "MAX"};
+function upgradeAt(x, y)
+    for i = 1, #upgrades do
+        local bx, by = w + w / 16, i * h
+        if x >= bx and x <= bx + w * 7 / 8 and y >= by and y <= by + h * 3 / 4 then
+            return i
+        end
+    end
+    return nil
+end
 
-function drawUpgrade(startX, startY, level, color)
-    local cost = costs[level+1];
-    love.graphics.setColor(0, 0, 0)
+function buy(i)
+    local u = upgrades[i]
+    if u.level < 6 and spend(costs[u.level + 1]) then
+        u.level = u.level + 1
+    end
+end
+
+local function upgradeInfo(i, level)
+    if i == 1 then return string.format("jump x%.1f", 1 + 0.2 * level) end
+    if i == 2 then return "max combo " .. MAX_COMBO[level] end
+    return string.format("cash x%.1f", 1 + 0.5 * level)
+end
+
+function drawUpgrade(startX, startY, i)
+    local u = upgrades[i]
+    local level = u.level
+    local cost = costs[level + 1]
+    if hover == i then
+        love.graphics.setColor(0.35, 0.35, 0.38)
+    else
+        love.graphics.setColor(0, 0, 0)
+    end
     love.graphics.rectangle("fill", startX + (1 / 16) * w, startY, w - (1 / 8) * w, (3 / 4) * h, 10, 10);
     love.graphics.setColor(0.5, 0.5, 0.5);
     love.graphics.rectangle("fill", startX + w/16 + h / 8, startY + h/8, h / 2, h / 2, 10, 10);
+    drawIcon(u.icon, startX + w/16 + h / 8 + 6, startY + h/8 + 6, h / 2 - 12, h / 2 - 12)
+    love.graphics.setColor(0.5, 0.5, 0.5);
     love.graphics.circle("fill", startX + 15 * w / 16 - 5 * h / 16, startY + 3 * h / 8, h / 4);
-    love.graphics.setColor(0, 0, 0);
-    for i = 0, 5 do
-        love.graphics.arc("line",
-            startX + 15 * w / 16 - 5 * h / 16,
-            startY + 3 * h / 8,
-            h / 4,
-            math.pi * 2 / 6 * i,
-            math.pi * 2 / 6 * (i + 1)
-        );
-    end
-    love.graphics.setColor(color);
-
-    if level > 0 then for i = 1, level do
+    love.graphics.setColor(u.color);
+    for n = 1, level do
         love.graphics.arc("fill",
             startX + 15 * w / 16 - 5 * h / 16,
             startY + 3 * h / 8,
             h / 4,
-            math.pi * 2 / 6 * (i-1),
-            math.pi * 2 / 6 * (i)
+            math.pi * 2 / 6 * (n - 1) - math.pi / 2,
+            math.pi * 2 / 6 * n - math.pi / 2
         );
-    end; end;
-    love.graphics.setColor(0, 0, 0)
-    love.graphics.print("Upgrade Name", medFont, startX + h * 7 / 8, startY + 3 * h / 16);
-    love.graphics.print("Cost: " .. cost .. "$", smallFont, startX + h * 7 / 8, startY + 7 * h / 16);
+    end
+    love.graphics.setColor(0, 0, 0);
+    for n = 0, 5 do
+        love.graphics.arc("line",
+            startX + 15 * w / 16 - 5 * h / 16,
+            startY + 3 * h / 8,
+            h / 4,
+            math.pi * 2 / 6 * n - math.pi / 2,
+            math.pi * 2 / 6 * (n + 1) - math.pi / 2
+        );
+    end
+
+    local tx = startX + h * 7 / 8
+    inkText(u.name, medFont, tx, startY + 3 * h / 16, 2)
+    inkText(upgradeInfo(i, level), smallFont, tx, startY + 3 * h / 16 + 28, 1)
+    if level >= 6 then
+        inkText("MAX", medFont, tx, startY + 3 * h / 16 + 50, 2, u.color)
+    else
+        drawIcon("money.png", tx, startY + 3 * h / 16 + 50, 14, 24)
+        local fill = money >= cost and PAPER or { 1, 0.45, 0.4 }
+        inkText(tostring(cost), medFont, tx + 18, startY + 3 * h / 16 + 50, 2, fill)
+    end
 end
 
 local cloudImgs, clouds, cloudTop = {}, {}, 0
@@ -337,7 +439,7 @@ end
 function updateClouds(dt)
   while #cloudImgs > 0 and cloudTop > cam - 300 do
     cloudTop = cloudTop - (140 + love.math.random() * 180)
-    addCloud(cloudTop)
+    if cloudTop > floorY - 7000 then addCloud(cloudTop) end
   end
   for _, c in ipairs(clouds) do
     c.x = c.x + c.speed * dt
@@ -354,14 +456,29 @@ function drawClouds()
   end
 end
 
+local function drawGoal(gw)
+    local gy = floorY + ball.r - GOAL * 10
+    if gy < cam - 60 or gy > cam + love.getHeight() + 60 then return end
+    for x = 0, gw, 26 do
+        love.graphics.setLineWidth(6)
+        love.graphics.setColor(INK)
+        love.graphics.line(x, gy, x + 16, gy)
+        love.graphics.setLineWidth(3)
+        love.graphics.setColor(PAPER)
+        love.graphics.line(x + 1, gy, x + 15, gy)
+    end
+    love.graphics.setLineWidth(1)
+    inkText("GOAL " .. GOAL .. "m", medFont, 12, gy - 32, 2)
+end
+
 
 function drawPanel(startX, startY)
     -- top is title + line
     drawTitle(startX, 0);
 
-    drawUpgrade(startX, h, jumpLevel, {1, 0.3, 0.3})
-    drawUpgrade(startX, 2*h, comboLevel, {0.3, 0.6, 1})
-    drawUpgrade(startX, 3*h, coinLevel, {0.3, 0.9, 0.4})
+    drawUpgrade(startX, h, 1)
+    drawUpgrade(startX, 2*h, 2)
+    drawUpgrade(startX, 3*h, 3)
 end
 
 local titleFont = love.graphics.newFont(80)
@@ -453,45 +570,171 @@ function drawStart()
     inkText(text, startFont, -startFont:getWidth(text) / 2, 0, 2)
     love.graphics.pop()
   end
+  local goalText = "get to " .. GOAL .. "m to win"
+  inkText(goalText, startFont, W / 2 - startFont:getWidth(goalText) / 2, top + 70, 2)
   love.graphics.setColor(1, 1, 1)
 end
+
+local SKY_STOPS = {
+  { 0, 0.41, 0.69, 0.67 },
+  { 500, 0.41, 0.69, 0.67 },
+  { 650, 0.58, 0.64, 0.86 },
+  { 800, 0.47, 0.42, 0.70 },
+  { 1200, 0.33, 0.28, 0.52 },
+}
+local STAR_COLORS = {
+  { 1, 0.80, 0.90 }, { 0.75, 1, 0.90 }, { 1, 0.97, 0.75 }, { 0.85, 0.80, 1 }, { 1, 1, 1 },
+}
+
+local function skyColor(m)
+  if m <= SKY_STOPS[1][1] then return SKY_STOPS[1][2], SKY_STOPS[1][3], SKY_STOPS[1][4] end
+  for i = 2, #SKY_STOPS do
+    local a, b = SKY_STOPS[i - 1], SKY_STOPS[i]
+    if m <= b[1] then
+      local t = (m - a[1]) / (b[1] - a[1])
+      return a[2] + (b[2] - a[2]) * t, a[3] + (b[3] - a[3]) * t, a[4] + (b[4] - a[4]) * t
+    end
+  end
+  local last = SKY_STOPS[#SKY_STOPS]
+  return last[2], last[3], last[4]
+end
+
+function drawSky(gw, H)
+  for y = 0, H, 10 do
+    love.graphics.setColor(skyColor((floorY - (cam + y)) / 10))
+    love.graphics.rectangle("fill", 0, y, gw, 10)
+  end
+end
+
+function drawStars(gw, H)
+  local band = 200
+  for b = math.floor(cam / band) - 1, math.floor((cam + H) / band) do
+    local wy = b * band
+    local m = (floorY - wy) / 10
+    if m > 550 then
+      local fade = math.min(1, (m - 550) / 250)
+      local rng = love.math.newRandomGenerator(5000000 + b)
+      for i = 1, 6 do
+        local x = math.floor(rng:random() * gw / 4) * 4
+        local y = wy + math.floor(rng:random() * band / 4) * 4
+        local s = rng:random() < 0.7 and 4 or 8
+        local twinkle = rng:random() < 0.25
+        local c = STAR_COLORS[rng:random(#STAR_COLORS)]
+        love.graphics.setColor(c[1], c[2], c[3], fade)
+        if twinkle then
+          love.graphics.rectangle("fill", x - 4, y, 12, 4)
+          love.graphics.rectangle("fill", x, y - 4, 4, 12)
+        else
+          love.graphics.rectangle("fill", x, y, s, s)
+        end
+      end
+    end
+  end
+end
+
+local WIND = {
+  { 14, 0.00, 120, 1.00, 2 },
+  { 36, 0.40, 70, 1.30, 1.5 },
+  { 24, 0.78, 160, 0.85, 2.5 },
+  { 50, 0.22, 60, 1.15, 1 },
+  { -14, 0.15, 100, 1.10, 2 },
+  { -38, 0.58, 140, 0.90, 2.5 },
+  { -24, 0.92, 80, 1.25, 1.5 },
+  { -52, 0.35, 55, 1.05, 1 },
+}
+
+local function windStroke(x, y, len, width, alpha)
+  love.graphics.setLineWidth(width)
+  for i = 0, 7 do
+    love.graphics.setColor(1, 1, 1, alpha * math.sin((i + 0.5) / 8 * math.pi))
+    love.graphics.line(x, y + len * i / 8, x, y + len * (i + 1) / 8)
+  end
+end
+
+function drawWind(gw, H)
+  local speed = math.abs(ball.vy)
+  local alpha = math.min(0.6, math.max(0, (speed - 300) / 2000))
+  if alpha <= 0 then return end
+  local stretch = 0.6 + 0.8 * math.min(1, speed / 3000)
+  local span = H + 300
+  for _, wnd in ipairs(WIND) do
+    local x = wnd[1] >= 0 and wnd[1] or gw + wnd[1]
+    local y = (wnd[2] * span + windScroll * 0.6 * wnd[4]) % span - 150
+    windStroke(x, y, wnd[3] * stretch, wnd[5], alpha)
+  end
+  love.graphics.setLineWidth(1)
+  love.graphics.setColor(1, 1, 1)
+end
+
+function drawWin()
+  local W, H = love.getWidth(), love.getHeight()
+  love.graphics.setColor(0, 0, 0, 0.55)
+  love.graphics.rectangle("fill", 0, 0, W, H)
+  local t1 = "YOU WIN!"
+  inkText(t1, titleFont, W / 2 - titleFont:getWidth(t1) / 2, H * 0.28, 4)
+  local t2 = "you reached " .. GOAL .. "m"
+  inkText(t2, startFont, W / 2 - startFont:getWidth(t2) / 2, H * 0.28 + 110, 2)
+  if love.timer.getTime() % 1.2 < 0.8 then
+    local t3 = "click to keep bouncing"
+    inkText(t3, smallFont, W / 2 - smallFont:getWidth(t3) / 2, H * 0.28 + 160, 2)
+  end
+  love.graphics.setColor(1, 1, 1)
+end
+
 function spend(cost)
   if money < cost then return false end
   money = money - cost
   return true
 end
 
-local moneyImg, moneyQuad
-
-local function loadMoney()
-  moneyImg = false
-  if not love.filesystem.getInfo("money.png") then return end
-  local data = love.image.newImageData("money.png")
-  local w, h = data:getDimensions()
-  local x1, y1, x2, y2 = w, h, 0, 0
-  for y = 0, h - 1, 8 do
-    for x = 0, w - 1, 8 do
-      local _, _, _, a = data:getPixel(x, y)
-      if a > 0.1 then
-        x1, y1 = math.min(x1, x), math.min(y1, y)
-        x2, y2 = math.max(x2, x), math.max(y2, y)
-      end
-    end
-  end
-  moneyImg = love.graphics.newImage(data, { mipmaps = true })
-  moneyQuad = love.graphics.newQuad(x1, y1, x2 - x1 + 8, y2 - y1 + 8, w, h)
-end
-
 function drawMoney(gw)
-  if moneyImg == nil then loadMoney() end
   local text = tostring(money)
   local tx = gw - bigFont:getWidth(text) - 20
   inkText(text, bigFont, tx, 16, 3)
-  if moneyImg then
-    local _, _, qw, qh = moneyQuad:getViewport()
-    local s = bigFont:getHeight() * 0.85 / qh
-    love.graphics.setColor(1, 1, 1)
-    love.graphics.draw(moneyImg, moneyQuad, tx - qw * s - 6, 20, 0, s, s)
+  drawIcon("money.png", tx - 30, 18, 26, bigFont:getHeight() * 0.85)
+end
+local music
+
+function startMusic()
+  for _, file in ipairs({ "music.mp3", "music.ogg", "music.wav" }) do
+    if love.filesystem.getInfo(file) then
+      music = love.audio.newSource(file, "stream")
+      music:setLooping(true)
+      music:setVolume(0.5)
+      music:play()
+      return
+    end
+  end
+end
+
+local impactSound
+
+function loadImpactSound()
+  if love.filesystem.getInfo("impact.mp3") then
+    impactSound = love.audio.newSource("impact.mp3", "static")
+  end
+end
+
+function playImpact()
+  if impactSound then
+    impactSound:stop()
+    impactSound:seek(0.06)
+    impactSound:play()
+  end
+end
+local wooshSound
+
+function loadWoosh()
+  if love.filesystem.getInfo("woosh.mp3") then
+    wooshSound = love.audio.newSource("woosh.mp3", "static")
+  end
+end
+
+function playWoosh()
+  if wooshSound then
+    wooshSound:stop()
+    wooshSound:seek(0.12)
+    wooshSound:play()
   end
 end
 function love.draw()
@@ -507,8 +750,11 @@ function love.draw()
     love.graphics.clear(love.math.colorFromBytes(0x68, 0xb0, 0xab))
     love.graphics.setScissor(0, 0, gw, H)
     love.graphics.setLineJoin("bevel")
+    drawSky(gw, H)
     love.graphics.translate(sx, sy - cam)
+    drawStars(gw, H)
     drawClouds()
+    drawGoal(gw)
 
     local ground = floorY + ball.r
     love.graphics.setColor(love.math.colorFromBytes(0x4a, 0x7c, 0x59))
@@ -586,6 +832,7 @@ function love.draw()
         if k == 0 then wedges(rng, 8) end
     end
     love.graphics.origin()
+    drawWind(gw, H)
     love.graphics.setColor(1, 1, 1)
     drawHeight()
     drawMoney(gw)
@@ -596,4 +843,5 @@ function love.draw()
     love.graphics.line(gw, 0, gw, H)
     love.graphics.setColor(1, 1, 1)
     drawPanel(w, 0);
+    if winScreen then drawWin() end
 end
